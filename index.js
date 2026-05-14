@@ -1,14 +1,37 @@
 const express = require("express");
-const cors = require('cors')
+const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion } = require("mongodb");
 
-// middlewares 
-app.use(cors())
-app.use(express.json())
+// middlewares
+app.use(cors());
+app.use(express.json());
 
+const admin = require("firebase-admin");
+const serviceAccount = require("./digital-life-lesson-firebase-adminsdk.json");
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
+const verifyFBToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  console.log(token);
+
+  if (!token) {
+    return res.status(401).send({ message: "1.Unauthorized Access" });
+  }
+  try {
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
+    req.decoded_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: "2.Unauthorized Access" });
+  }
+};
 
 app.get("/", (req, res) => {
   res.send("Life Lesson Server is Running!");
@@ -35,10 +58,28 @@ async function run() {
     const usersCollection = db.collection("users");
 
     // user related apis:
-    app.post("/users", async (req, res) => {
-      const user = {...req.body, createdAt: new Date()};
+    app.get("/users", verifyFBToken, async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.email = email;
+        const user = await usersCollection.findOne(query);
+        return res.send(user);
+      }
+
+      const users = await usersCollection.find(query).toArray();
+      res.send(users);
+    });
+
+    app.post("/users", verifyFBToken, async (req, res) => {
+      const user = { ...req.body, createdAt: new Date() };
+
       const email = user.email;
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
       const query = { email };
+
       const existingUser = await usersCollection.findOne(query);
       if (existingUser) {
         return res.send({ message: "User Exists" });
