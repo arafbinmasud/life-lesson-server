@@ -56,6 +56,20 @@ async function run() {
 
     const db = client.db("life-lesson-db");
     const usersCollection = db.collection("users");
+    const lessonsCollection = db.collection("lessons");
+
+    // lesson related apis
+    app.post("/lessons", verifyFBToken, async (req, res) => {
+      const lesson = req.body;
+      console.log(lesson);
+      
+      const { authorEmail } = req.body;
+      if (authorEmail !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      const result = await lessonsCollection.insertOne(lesson);
+      res.send(result);
+    });
 
     // user related apis:
     app.get("/users", verifyFBToken, async (req, res) => {
