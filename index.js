@@ -3,7 +3,7 @@ const cors = require("cors");
 const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 // middlewares
 app.use(cors());
@@ -18,7 +18,6 @@ admin.initializeApp({
 
 const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
-  console.log(token);
 
   if (!token) {
     return res.status(401).send({ message: "1.Unauthorized Access" });
@@ -59,15 +58,67 @@ async function run() {
     const lessonsCollection = db.collection("lessons");
 
     // lesson related apis
+    app.get("/lessons", verifyFBToken, async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden Access" });
+        }
+        query.authorEmail = email;
+        const result = await lessonsCollection.find(query).toArray();
+        return res.send(result);
+      }
+      const result = await lessonsCollection.find(query).toArray();
+      res.send(result);
+    });
+
     app.post("/lessons", verifyFBToken, async (req, res) => {
-      const lesson = req.body;
-      console.log(lesson);
-      
-      const { authorEmail } = req.body;
+      const lesson = { ...req.body, createdAt: new Date() };
+      const { authorEmail } = lesson;
       if (authorEmail !== req.decoded_email) {
         return res.status(403).send({ message: "Forbidden Access" });
       }
       const result = await lessonsCollection.insertOne(lesson);
+      res.send(result);
+    });
+
+    app.delete("/lessons/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const { query } = { _id: new ObjectId(id) };
+      const lesson = await lessonsCollection.findOne(query);
+      if (!lesson) {
+        return res.status(404).send({ message: "Lesson not found" });
+      }
+      if (lesson.authorEmail !== req.decoded_email) {
+        return res
+          .status(403)
+          .send({ message: "You cannot delete someone else's lesson!" });
+      }
+
+      const result = await lessonsCollection.deleteOne(query);
+      res.send(result);
+    });
+
+    app.patch("/lessons/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const updatedLesson = req.body;
+      console.log(updatedLesson);
+      const query = { _id: new ObjectId(id) };
+      const existingLesson = await lessonsCollection.findOne(query);
+      if (!existingLesson) {
+        return res.status(404).send({ message: "Lesson not found!" });
+      }
+      if (existingLesson.authorEmail !== req.decoded_email) {
+        return res
+          .status(403)
+          .send({ message: "You cannot update someone else's lesson!" });
+      }
+      const {_id, createdAt, ...updatedData} = updatedLesson
+      const updatedDoc = {
+        $set: {...updatedData, updatedAt: new Date()}
+      };
+      const result = await lessonsCollection.updateOne(query, updatedDoc);
       res.send(result);
     });
 
@@ -76,6 +127,9 @@ async function run() {
       const { email } = req.query;
       const query = {};
       if (email) {
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden Access" });
+        }
         query.email = email;
         const user = await usersCollection.findOne(query);
         return res.send(user);
