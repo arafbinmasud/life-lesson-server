@@ -4,6 +4,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 // middlewares
 app.use(cors());
@@ -56,6 +57,35 @@ async function run() {
     const db = client.db("life-lesson-db");
     const usersCollection = db.collection("users");
     const lessonsCollection = db.collection("lessons");
+    const favoritesCollection = db.collection("favorite-lessons");
+
+    // payment related apis:
+    app.post("/payment-checkout-session", verifyFBToken, async (req, res) => {
+      const { price, userEmail } = req.body;
+      const session = await stripe.checkout.sessions.create({
+        line_items: [
+          {
+            price_data: {
+              currency: "usd",
+              product_data: {
+                name: "Digital Life Lesson Premium",
+              },
+              unit_amount: price * 100,
+            },
+            quantity: 1,
+          },
+        ],
+        metadata: {
+          email: userEmail,
+        },
+        mode: "payment",
+        customer_email: userEmail,
+        success_url: `${process.env.SITE_DOMAIN}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/payment-cancel`,
+      });
+
+      res.send({ url: session.url });
+    });
 
     // lesson related apis
     app.get("/lessons", verifyFBToken, async (req, res) => {
@@ -114,9 +144,9 @@ async function run() {
           .status(403)
           .send({ message: "You cannot update someone else's lesson!" });
       }
-      const {_id, createdAt, ...updatedData} = updatedLesson
+      const { _id, createdAt, ...updatedData } = updatedLesson;
       const updatedDoc = {
-        $set: {...updatedData, updatedAt: new Date()}
+        $set: { ...updatedData, updatedAt: new Date() },
       };
       const result = await lessonsCollection.updateOne(query, updatedDoc);
       res.send(result);
@@ -154,6 +184,24 @@ async function run() {
       }
 
       const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch("/users/upgrade/:email", verifyFBToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
+      const filter = { email: email };
+      const updatedDoc = {
+        $set: {
+          isPremiumUser: true,
+        },
+      };
+
+      const result = await usersCollection.updateOne(filter, updatedDoc);
       res.send(result);
     });
   } finally {
