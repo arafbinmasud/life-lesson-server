@@ -162,6 +162,42 @@ async function run() {
       res.send({ lessons, total });
     });
 
+    app.get("/dashboard-stats", verifyFBToken, async (req, res) => {
+      const { email } = req.query;
+      console.log("back", email, req.decoded_email);
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "forbidden" });
+      }
+
+      const totalCreated = await lessonsCollection.countDocuments({
+        authorEmail: email,
+      });
+
+      const totalSaved = await lessonsCollection.countDocuments({
+        favorites: email,
+      });
+
+      const recentLessons = await lessonsCollection
+        .find({ authorEmail: email })
+        .sort({ createdAt: -1 })
+        .limit(3)
+        .toArray();
+
+      const chartData = await lessonsCollection
+        .aggregate([
+          { $match: { authorEmail: email } },
+          { $group: { _id: "$category", count: { $sum: 1 } } },
+        ])
+        .toArray();
+
+      res.send({
+        totalCreated,
+        totalSaved,
+        recentLessons,
+        chartData,
+      });
+    });
+
     app.get("/lessons/similar", async (req, res) => {
       const { category, tone, id } = req.query;
       const query = {
