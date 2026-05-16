@@ -123,15 +123,51 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/public-lessons", async (req, res) => {
+      const { search, category, tone, sort, page = 1, limit = 12 } = req.query;
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      const query = { privacy: "Public" };
+      if (search) query.title = { $regex: search, $options: "i" };
+      if (category) query.category = category;
+      if (tone) query.tone = tone;
+
+      let lessons;
+      if (sort === "most-saved") {
+        lessons = await lessonsCollection
+          .aggregate([
+            { $match: query },
+            {
+              $addFields: {
+                favCount: { $size: "$favorites" },
+              },
+            },
+            { $sort: { favCount: -1 } },
+            { $skip: skip },
+            { $limit: parseInt(limit) },
+          ])
+          .toArray();
+      } else {
+        const sortObj = { createdAt: -1 };
+        lessons = await lessonsCollection
+          .find(query)
+          .sort(sortObj)
+          .skip(skip)
+          .limit(parseInt(limit))
+          .toArray();
+      }
+
+      const total = await lessonsCollection.countDocuments(query);
+
+      res.send({ lessons, total });
+    });
+
     app.get("/lessons/similar", async (req, res) => {
       const { category, tone, id } = req.query;
       const query = {
-        _id: {$ne: new ObjectId(id)},
-        $or: [
-          {category},
-          {tone}
-        ]
-      }
+        _id: { $ne: new ObjectId(id) },
+        $or: [{ category }, { tone }],
+      };
       const result = await lessonsCollection.find(query).limit(6).toArray();
       res.send(result);
     });
