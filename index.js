@@ -58,6 +58,26 @@ async function run() {
     const usersCollection = db.collection("users");
     const lessonsCollection = db.collection("lessons");
     const favoritesCollection = db.collection("favorite-lessons");
+    const reportsCollection = db.collection("reports");
+    const commentsCollection = db.collection("comments");
+
+    // comments related apis
+
+    app.get("/comments/:lessonId", async (req, res) => {
+      const id = req.params.lessonId;
+      const query = { lessonId: id };
+      const result = await commentsCollection
+        .find(query)
+        .sort({ _id: -1 })
+        .toArray();
+      res.send(result);
+    });
+
+    app.post("/comments", async (req, res) => {
+      const commentData = req.body;
+      const result = await commentsCollection.insertOne(commentData);
+      res.send(result);
+    });
 
     // payment related apis:
     app.post("/payment-checkout-session", verifyFBToken, async (req, res) => {
@@ -100,6 +120,42 @@ async function run() {
         return res.send(result);
       }
       const result = await lessonsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+    app.get("/lessons/similar", async (req, res) => {
+      const { category, tone, id } = req.query;
+      const query = {
+        _id: {$ne: new ObjectId(id)},
+        $or: [
+          {category},
+          {tone}
+        ]
+      }
+      const result = await lessonsCollection.find(query).limit(6).toArray();
+      res.send(result);
+    });
+
+    app.get("/lessons/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const lesson = await lessonsCollection.findOne(query);
+      if (!lesson) {
+        return res.send({ message: "Lesson not found" });
+      }
+      const totalLessons = await lessonsCollection.countDocuments({
+        authorEmail: lesson.authorEmail,
+      });
+      lesson.totalLessons = totalLessons;
+      res.send(lesson);
+    });
+
+    app.get("/lessons/author/:authorId", async (req, res) => {
+      const { authorId } = req.params;
+      const query = { authorId };
+      const result = await lessonsCollection.find(query).toArray();
+      console.log(result);
+
       res.send(result);
     });
 
@@ -152,6 +208,69 @@ async function run() {
       res.send(result);
     });
 
+    app.patch("/lessons/like/:id", verifyFBToken, async (req, res) => {
+      const id = req.params.id;
+      const email = req.body.email;
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "forbidden" });
+      }
+      const lesson = await lessonsCollection.findOne({ _id: new ObjectId(id) });
+      if (!lesson) {
+        return res.send({ message: "No Lesson" });
+      }
+
+      let updateDoc;
+      if (lesson.likes?.includes(email)) {
+        updateDoc = { $pull: { likes: email } };
+      } else {
+        updateDoc = { $addToSet: { likes: email } };
+      }
+      const result = await lessonsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        updateDoc,
+      );
+      res.send(result);
+    });
+
+    app.patch("/lessons/favorites/:id", verifyFBToken, async (req, res) => {
+      const { id } = req.params;
+      const { email } = req.body;
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "forbidden" });
+      }
+      const lesson = await lessonsCollection.findOne({ _id: new ObjectId(id) });
+      if (!lesson) {
+        return res.send({ message: "No Lesson" });
+      }
+      let updateDoc;
+      if (lesson.favorites?.includes(email)) {
+        updateDoc = { $pull: { favorites: email } };
+      } else {
+        updateDoc = { $addToSet: { favorites: email } };
+      }
+      const result = await lessonsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        updateDoc,
+      );
+      res.send(result);
+    });
+
+    // lesson report related apis
+    app.post("/lesson-report", verifyFBToken, async (req, res) => {
+      const reportData = req.body;
+      const { lessonId, reporterUserId } = reportData;
+      const alreadyReported = await reportsCollection.findOne({
+        lessonId,
+        reporterUserId,
+      });
+
+      if (alreadyReported) {
+        return res.send({ message: "Already Reported" });
+      }
+
+      const result = await reportsCollection.insertOne(reportData);
+      res.send(result);
+    });
     // user related apis:
     app.get("/users", verifyFBToken, async (req, res) => {
       const { email } = req.query;
