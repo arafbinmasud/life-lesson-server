@@ -61,6 +61,45 @@ async function run() {
     const reportsCollection = db.collection("reports");
     const commentsCollection = db.collection("comments");
 
+    // homepage api
+    app.get("/home-dynamic-data", async (req, res) => {
+      const featuredLessons = await lessonsCollection
+        .find({ privacy: "Public", isFeatured: true })
+        .limit(3)
+        .toArray();
+
+      const mostSavedLessons = await lessonsCollection
+        .aggregate([
+          { $match: { privacy: "Public" } },
+          { $addFields: { favCount: { $size: "$favorites" } } },
+          { $sort: { favCount: -1 } },
+          { $limit: 3 },
+        ])
+        .toArray();
+
+      const topContributors = await lessonsCollection
+        .aggregate([
+          { $match: { privacy: "Public" } },
+          {
+            $group: {
+              _id: "$authorEmail",
+              lessonCount: { $sum: 1 },
+              authorName: { $first: "$authorName" },
+              authorPhoto: { $first: "$authorPhoto" },
+              authorId: { $first: "$authorId" },
+            },
+          },
+          { $sort: { lessonCount: -1 } },
+          { $limit: 4 },
+        ])
+        .toArray();
+
+      res.send({
+        featuredLessons,
+        mostSavedLessons,
+        topContributors,
+      });
+    });
     // comments related apis
 
     app.get("/comments/:lessonId", async (req, res) => {
@@ -344,7 +383,7 @@ async function run() {
       const { lessonId, email } = req.body;
       const result = await lessonsCollection.updateOne(
         { _id: new ObjectId(lessonId) },
-        { $pull: { favorites: email } }
+        { $pull: { favorites: email } },
       );
       res.send(result);
     });
