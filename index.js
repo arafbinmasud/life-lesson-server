@@ -61,6 +61,29 @@ async function run() {
     const reportsCollection = db.collection("reports");
     const commentsCollection = db.collection("comments");
 
+    //user profile api:
+    app.get("/user-profile-info", async (req, res) => {
+      const { email } = req.query;
+      const totalCreated = await lessonsCollection.countDocuments({
+        authorEmail: email,
+      });
+
+      const totalSaved = await lessonsCollection.countDocuments({
+        favorites: email,
+      });
+
+      const myPublicLessons = await lessonsCollection
+        .find({ authorEmail: email, privacy: "Public" })
+        .sort({ createdAt: -1 })
+        .toArray();
+
+      res.send({
+        totalCreated,
+        totalSaved,
+        myPublicLessons,
+      });
+    });
+
     // homepage api
     app.get("/home-dynamic-data", async (req, res) => {
       const featuredLessons = await lessonsCollection
@@ -278,7 +301,6 @@ async function run() {
       const { authorId } = req.params;
       const query = { authorId };
       const result = await lessonsCollection.find(query).toArray();
-      console.log(result);
 
       res.send(result);
     });
@@ -404,6 +426,7 @@ async function run() {
       const result = await reportsCollection.insertOne(reportData);
       res.send(result);
     });
+
     // user related apis:
     app.get("/users", verifyFBToken, async (req, res) => {
       const { email } = req.query;
@@ -455,6 +478,37 @@ async function run() {
 
       const result = await usersCollection.updateOne(filter, updatedDoc);
       res.send(result);
+    });
+
+    app.patch("/users/update-profile", verifyFBToken, async (req, res) => {
+      const { email } = req.query;
+      const { name, photo } = req.body;
+
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
+      const query = { email };
+      const updateDoc = {
+        $set: {
+          displayName: name,
+          photoURL: photo,
+        },
+      };
+
+      const userResult = await usersCollection.updateOne(query, updateDoc);
+
+      const response = await lessonsCollection.updateMany(
+        { authorEmail: email },
+        {
+          $set: {
+            authorName: name,
+            authorPhoto: photo,
+          },
+        },
+      );
+
+      res.send(userResult);
     });
   } finally {
     // Ensures that the client will close when you finish/error
