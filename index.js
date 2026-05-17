@@ -164,7 +164,7 @@ async function run() {
 
     app.get("/dashboard-stats", verifyFBToken, async (req, res) => {
       const { email } = req.query;
-      console.log("back", email, req.decoded_email);
+
       if (email !== req.decoded_email) {
         return res.status(403).send({ message: "forbidden" });
       }
@@ -208,8 +208,11 @@ async function run() {
       res.send(result);
     });
 
-    app.get("/my-favorites", async (req, res) => {
+    app.get("/my-favorites", verifyFBToken, async (req, res) => {
       const { email, category, tone } = req.query;
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "forbidden" });
+      }
       const query = { favorites: email };
       if (category) query.category = category;
       if (tone) query.tone = tone;
@@ -333,6 +336,15 @@ async function run() {
       const result = await lessonsCollection.updateOne(
         { _id: new ObjectId(id) },
         updateDoc,
+      );
+      res.send(result);
+    });
+
+    app.put("/my-favorites/remove", async (req, res) => {
+      const { lessonId, email } = req.body;
+      const result = await lessonsCollection.updateOne(
+        { _id: new ObjectId(lessonId) },
+        { $pull: { favorites: email } }
       );
       res.send(result);
     });
