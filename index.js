@@ -208,6 +208,16 @@ async function run() {
       res.send(result);
     });
 
+    app.get("/my-favorites", async (req, res) => {
+      const { email, category, tone } = req.query;
+      const query = { favorites: email };
+      if (category) query.category = category;
+      if (tone) query.tone = tone;
+
+      const favorites = await lessonsCollection.find(query).toArray();
+      res.send(favorites);
+    });
+
     app.get("/lessons/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
