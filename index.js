@@ -140,6 +140,20 @@ async function run() {
       res.send(usersWithLessonCount);
     });
 
+    app.patch(
+      "/admin/users/role/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: req.body },
+        );
+        res.send(result);
+      },
+    );
+
     //user profile api:
     app.get("/user-profile-info", async (req, res) => {
       const { email } = req.query;
