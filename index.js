@@ -97,7 +97,7 @@ async function run() {
               name: { $first: "$authorName" },
               photo: { $first: "$authorPhoto" },
               lessonCount: { $sum: 1 },
-              authorId: { $first: "$authorId" }
+              authorId: { $first: "$authorId" },
             },
           },
           { $sort: { lessonCount: -1 } },
@@ -114,6 +114,31 @@ async function run() {
       });
     });
 
+    app.get("/admin/users", verifyFBToken, verifyAdmin, async (req, res) => {
+      const usersWithLessonCount = await usersCollection
+        .aggregate([
+          {
+            $lookup: {
+              from: "lessons",
+              localField: "email",
+              foreignField: "authorEmail",
+              as: "userLessons",
+            },
+          },
+          {
+            $project: {
+              displayName: 1,
+              email: 1,
+              role: 1,
+              photoURL: 1,
+              totalLessons: { $size: "$userLessons" },
+            },
+          },
+        ])
+        .toArray();
+
+      res.send(usersWithLessonCount);
+    });
 
     //user profile api:
     app.get("/user-profile-info", async (req, res) => {
