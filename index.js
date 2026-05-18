@@ -17,6 +17,7 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
+// custom middlewares
 const verifyFBToken = async (req, res, next) => {
   const token = req.headers.authorization;
 
@@ -60,6 +61,59 @@ async function run() {
     const favoritesCollection = db.collection("favorite-lessons");
     const reportsCollection = db.collection("reports");
     const commentsCollection = db.collection("comments");
+
+    // middleware to access db
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded_email;
+      const user = await usersCollection.findOne({ email });
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+      next();
+    };
+    // admin dashboard apis
+    app.get("/admin-overview", verifyFBToken, verifyAdmin, async (req, res) => {
+      const totalUsers = await usersCollection.countDocuments();
+
+      const totalPublicLessons = await lessonsCollection.countDocuments({
+        privacy: "Public",
+      });
+
+      const totalReportedLessons = await lessonsCollection.countDocuments({
+        isReported: true,
+      });
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayNewLessons = await lessonsCollection.countDocuments({
+        createdAt: { $gte: today },
+      });
+
+      const mostActiveContributors = await lessonsCollection
+        .aggregate([
+          {
+            $group: {
+              _id: "$authorEmail",
+              name: { $first: "$authorName" },
+              photo: { $first: "$authorPhoto" },
+              lessonCount: { $sum: 1 },
+              authorId: { $first: "$authorId" }
+            },
+          },
+          { $sort: { lessonCount: -1 } },
+          { $limit: 5 },
+        ])
+        .toArray();
+
+      res.send({
+        totalUsers,
+        totalPublicLessons,
+        totalReportedLessons,
+        todayNewLessons,
+        mostActiveContributors,
+      });
+    });
+
 
     //user profile api:
     app.get("/user-profile-info", async (req, res) => {
@@ -424,6 +478,12 @@ async function run() {
       }
 
       const result = await reportsCollection.insertOne(reportData);
+
+      await lessonsCollection.updateOne(
+        { _id: new ObjectId(lessonId) },
+        { $set: { isReported: true } },
+      );
+
       res.send(result);
     });
 
