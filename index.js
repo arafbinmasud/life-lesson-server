@@ -11,7 +11,11 @@ app.use(cors());
 app.use(express.json());
 
 const admin = require("firebase-admin");
-const serviceAccount = require("./digital-life-lesson-firebase-adminsdk.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8",
+);
+const serviceAccount = JSON.parse(decoded);
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -50,10 +54,10 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!",
-    );
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!",
+    // );
 
     const db = client.db("life-lesson-db");
     const usersCollection = db.collection("users");
@@ -154,6 +158,71 @@ async function run() {
       },
     );
 
+    // ______________________ekhan theke______________
+    // ১. সব লেসন গেট, ডায়নামিক ফিল্টার এবং মডারেশন স্ট্যাটস এপিআই
+    app.get(
+      "/admin/manage-lessons",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const { category, privacy, isReported } = req.query;
+
+        const stats = {
+          publicCount: await lessonsCollection.countDocuments({
+            privacy: "Public",
+          }),
+          privateCount: await lessonsCollection.countDocuments({
+            privacy: "Private",
+          }),
+          reportedCount: await lessonsCollection.countDocuments({
+            isReported: true,
+          }),
+        };
+
+        let query = {};
+        if (category) query.category = category;
+        if (privacy) query.privacy = privacy;
+        if (isReported === "true") query.isReported = true;
+
+        const lessons = await lessonsCollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send({ stats, lessons });
+      },
+    );
+
+    app.patch(
+      "/admin/lessons/status/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const { isFeatured, status } = req.body;
+
+        const filter = { _id: new ObjectId(id) };
+        let updateDoc = { $set: {} };
+
+        if (isFeatured !== undefined) updateDoc.$set.isFeatured = isFeatured;
+        if (status !== undefined) updateDoc.$set.status = status;
+        const result = await lessonsCollection.updateOne(filter, updateDoc);
+        res.send(result);
+      },
+    );
+
+    app.delete(
+      "/admin/lessons/:id",
+      verifyFBToken,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await lessonsCollection.deleteOne(query);
+        res.send(result);
+      },
+    );
+
     //user profile api:
     app.get("/user-profile-info", async (req, res) => {
       const { email } = req.query;
@@ -181,7 +250,7 @@ async function run() {
     app.get("/home-dynamic-data", async (req, res) => {
       const featuredLessons = await lessonsCollection
         .find({ privacy: "Public", isFeatured: true })
-        .limit(3)
+        .limit(6)
         .toArray();
 
       const mostSavedLessons = await lessonsCollection
